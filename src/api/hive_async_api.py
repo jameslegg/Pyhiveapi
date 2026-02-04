@@ -21,6 +21,7 @@ class HiveApiAsync:
     def __init__(self, hiveSession=None, websession: Optional[ClientSession] = None):
         """Hive API initialisation."""
         self.baseUrl = "https://beekeeper.hivehome.com/1.0"
+        self.omniaBaseUrl = "https://api-prod.bgchprod.info/omnia"
         self.cameraBaseUrl = "prod.hcam.bgchtest.info"
         self.urls = {
             "properties": "https://sso.hivehome.com/",
@@ -37,6 +38,7 @@ class HiveApiAsync:
             "nodes": f"{self.baseUrl}/nodes/{{0}}/{{1}}",
             "long_lived": "https://api.prod.bgchprod.info/omnia/accessTokens",
             "weather": "https://weather.prod.bgchprod.info/weather",
+            "omnia_nodes": f"{self.omniaBaseUrl}/nodes/{{0}}",
         }
         self.timeout = 10
         self.json_return = {
@@ -45,6 +47,12 @@ class HiveApiAsync:
         }
         self.session = hiveSession
         self.websession = ClientSession() if websession is None else websession
+        self._owns_session = websession is None
+
+    async def close(self):
+        """Close the aiohttp session if we created it."""
+        if self._owns_session and self.websession and not self.websession.closed:
+            await self.websession.close()
 
     async def request(
         self, method: str, url: str, camera: bool = False, **kwargs
@@ -150,6 +158,34 @@ class HiveApiAsync:
             resp = await self.request("get", url)
             json_return.update({"original": resp.status})
             json_return.update({"parsed": await resp.json(content_type=None)})
+        except (OSError, RuntimeError, ZeroDivisionError):
+            await self.error()
+
+        return json_return
+
+    async def getOmniaNodes(self):
+        """Get all nodes from Omnia API (for EVSE devices).
+        
+        Returns:
+            dict: Response with status and parsed nodes data
+        """
+        json_return = {}
+        url = f"{self.omniaBaseUrl}/nodes"
+        
+        try:
+            headers = {
+                'Accept': 'application/vnd.alertme.zoo-6.5.0+json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Hive/14.04.3 iOS/26.2.1 Apple',
+                'x-alertme-client': 'Honeycomb React Native App',
+                'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
+            }
+            
+            async with self.websession.request(
+                "get", url, headers=headers
+            ) as resp:
+                json_return.update({"original": resp.status})
+                json_return.update({"parsed": await resp.json(content_type=None)})
         except (OSError, RuntimeError, ZeroDivisionError):
             await self.error()
 
@@ -347,3 +383,138 @@ class HiveApiAsync:
         """Check if running in file mode."""
         if self.session.config.file:
             raise FileInUse()
+
+    async def getEVSEStatus(self, node_id):
+        """Get EVSE (EV Charger) status from Omnia API.
+        
+        Args:
+            node_id: The node ID of the EVSE device
+            
+        Returns:
+            dict: Response with status and parsed data
+        """
+        json_return = {}
+        url = self.urls["omnia_nodes"].format(node_id)
+        
+        try:
+            # EVSE uses Omnia API with different headers
+            headers = {
+                'Accept': 'application/vnd.alertme.zoo-6.5.0+json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Hive/14.04.3 iOS/26.2.1 Apple',
+                'x-alertme-client': 'Honeycomb React Native App',
+                'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
+            }
+            
+            async with self.websession.request(
+                "get", url, headers=headers
+            ) as resp:
+                json_return.update({"original": resp.status})
+                json_return.update({"parsed": await resp.json(content_type=None)})
+        except (OSError, RuntimeError, ZeroDivisionError):
+            await self.error()
+
+        return json_return
+
+    async def setEVSEOverride(self, node_id, override_on: bool):
+        """Set EVSE PowerPlus override (manual charge control).
+        
+        Args:
+            node_id: The node ID of the EVSE device
+            override_on: True to start charging immediately, False to resume schedule
+            
+        Returns:
+            dict: Response with status and parsed data
+        """
+        json_return = {}
+        url = self.urls["omnia_nodes"].format(node_id)
+        
+        payload = {
+            "nodes": [{
+                "id": node_id,
+                "features": {
+                    "ev_supply_equipment_v1": {
+                        "transactionOverridden": {
+                            "targetValue": override_on
+                        }
+                    }
+                }
+            }]
+        }
+        
+        jsc = json.dumps(payload)
+        
+        try:
+            await self.isFileBeingUsed()
+            
+            headers = {
+                'Accept': 'application/vnd.alertme.zoo-6.5.0+json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Hive/14.04.3 iOS/26.2.1 Apple',
+                'x-alertme-client': 'Honeycomb React Native App',
+                'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
+            }
+            
+            async with self.websession.request(
+                "put", url, headers=headers, data=jsc
+            ) as resp:
+                json_return["original"] = resp.status
+                json_return["parsed"] = await resp.json(content_type=None)
+        except (FileInUse, OSError, RuntimeError, ConnectionError) as e:
+            if e.__class__.__name__ == "FileInUse":
+                return {"original": "file"}
+            else:
+                await self.error()
+
+        return json_return
+
+    async def setEVSECableUnlock(self, node_id):
+        """Unlock EVSE charging cable remotely.
+        
+        Args:
+            node_id: The node ID of the EVSE device
+            
+        Returns:
+            dict: Response with status and parsed data
+        """
+        json_return = {}
+        url = self.urls["omnia_nodes"].format(node_id)
+        
+        payload = {
+            "nodes": [{
+                "id": node_id,
+                "features": {
+                    "ev_supply_equipment_v1": {
+                        "cableUnlock": {
+                            "targetValue": True
+                        }
+                    }
+                }
+            }]
+        }
+        
+        jsc = json.dumps(payload)
+        
+        try:
+            await self.isFileBeingUsed()
+            
+            headers = {
+                'Accept': 'application/vnd.alertme.zoo-6.5.0+json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Hive/14.04.3 iOS/26.2.1 Apple',
+                'x-alertme-client': 'Honeycomb React Native App',
+                'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
+            }
+            
+            async with self.websession.request(
+                "put", url, headers=headers, data=jsc
+            ) as resp:
+                json_return["original"] = resp.status
+                json_return["parsed"] = await resp.json(content_type=None)
+        except (FileInUse, OSError, RuntimeError, ConnectionError) as e:
+            if e.__class__.__name__ == "FileInUse":
+                return {"original": "file"}
+            else:
+                await self.error()
+
+        return json_return

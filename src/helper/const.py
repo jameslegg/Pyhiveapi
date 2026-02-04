@@ -45,6 +45,21 @@ HIVETOHA = {
         False: "Offline",
     },
     "Switch": {"ON": True, "OFF": False},
+    "EVCharger": {
+        "Connection": {"OCCUPIED": "Connected", "AVAILABLE": "Disconnected"},
+        "ChargingState": {
+            "CHARGING": "Charging",
+            "SUSPENDED_EVSE": "Ready",
+            "FINISHING": "Finishing",
+            "IDLE": "Idle",
+            "AVAILABLE": "Available",
+        },
+        "DisplayState": {
+            "OPTIMISED": "Optimised",
+            "AVAILABLE": "Available",
+            "FINISHING": "Finishing",
+        },
+    },
 }
 
 HIVE_TYPES = {
@@ -55,6 +70,7 @@ HIVE_TYPES = {
     "Light": ["warmwhitelight", "tuneablelight", "colourtuneablelight"],
     "Sensor": ["motionsensor", "contactsensor"],
     "Switch": ["activeplug"],
+    "EVCharger": ["evse"],
 }
 sensor_commands = {
     "SMOKE_CO": "self.session.hub.getSmokeStatus(device)",
@@ -75,6 +91,19 @@ sensor_commands = {
     "Availability": "self.online(device)",
     "Connectivity": "self.online(device)",
     "Power": "self.session.switch.getPowerUsage(device)",
+    "EVCharger_Connection_Status": "self.session.evcharger.getConnectionStatus(device)",
+    "EVCharger_Charging_State": "self.session.evcharger.getChargingState(device)",
+    "EVCharger_Display_State": "self.session.evcharger.getDisplayState(device)",
+    "EVCharger_Is_Charging": "self.session.evcharger.isCharging(device)",
+    "EVCharger_Cable_Connected": "self.session.evcharger.isCableConnected(device)",
+    "EVCharger_Transaction_Active": "self.session.evcharger.isTransactionActive(device)",
+    "EVCharger_Override_Active": "self.session.evcharger.isOverrideActive(device)",
+    "EVCharger_Power": "self.session.evcharger.getPowerMetrics(device)",
+    "EVCharger_Energy": "self.session.evcharger.getEnergyMetrics(device)",
+    "EVCharger_Cost": "self.session.evcharger.getCostMetrics(device)",
+    "EVCharger_Mileage": "self.session.evcharger.getMileageMetrics(device)",
+    "EVCharger_Transaction_Info": "self.session.evcharger.getTransactionInfo(device)",
+    "EVCharger_Schedule_Info": "self.session.evcharger.getScheduleInfo(device)",
 }
 
 PRODUCTS = {
@@ -138,6 +167,23 @@ PRODUCTS = {
         'addList("sensor", p, haName=" Current Temperature", hiveType="Current_Temperature", category="diagnostic")',
     ],
     "contactsensor": ['addList("binary_sensor", p)'],
+    "evse": [
+        'addList("evcharger", p)',
+        'addList("switch", p, haName=" Charge Override", hiveType="EVCharger_Override", category="config")',
+        'addList("binary_sensor", p, haName=" Cable Connected", hiveType="EVCharger_Cable_Connected", category="diagnostic")',
+        'addList("binary_sensor", p, haName=" Is Charging", hiveType="EVCharger_Is_Charging", category="diagnostic")',
+        'addList("sensor", p, haName=" Connection Status", hiveType="EVCharger_Connection_Status", category="diagnostic")',
+        'addList("sensor", p, haName=" Charging State", hiveType="EVCharger_Charging_State", category="diagnostic")',
+        'addList("sensor", p, haName=" Display State", hiveType="EVCharger_Display_State", category="diagnostic")',
+        'addList("sensor", p, haName=" Transaction Active", hiveType="EVCharger_Transaction_Active", category="diagnostic")',
+        'addList("sensor", p, haName=" Override Active", hiveType="EVCharger_Override_Active", category="diagnostic")',
+        'addList("sensor", p, haName=" Power (W)", hiveType="EVCharger_Power", category="diagnostic")',
+        'addList("sensor", p, haName=" Energy (Wh)", hiveType="EVCharger_Energy", category="diagnostic")',
+        'addList("sensor", p, haName=" Cost", hiveType="EVCharger_Cost", category="diagnostic")',
+        'addList("sensor", p, haName=" Mileage", hiveType="EVCharger_Mileage", category="diagnostic")',
+        'addList("sensor", p, haName=" Mode", hiveType="Mode", category="diagnostic")',
+        'addList("sensor", p, haName=" Availability", hiveType="Availability", category="diagnostic")',
+    ],
 }
 
 DEVICES = {
@@ -162,6 +208,9 @@ DEVICES = {
     ],
     "trv": [
         'addList("sensor", d, haName=" Battery Level", hiveType="Battery", category="diagnostic")',
+        'addList("sensor", d, haName=" Availability", hiveType="Availability", category="diagnostic")',
+    ],
+    "evse": [
         'addList("sensor", d, haName=" Availability", hiveType="Availability", category="diagnostic")',
     ],
 }

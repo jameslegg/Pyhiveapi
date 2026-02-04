@@ -473,6 +473,50 @@ class HiveSession:
             self.data.actions = copy.deepcopy(tmpActions)
             if self.config.alarm:
                 await self.getAlarm()
+            
+            # Also fetch Omnia nodes for EVSE devices
+            if not self.config.file:
+                try:
+                    omnia_resp = await self.api.getOmniaNodes()
+                    if operator.contains(str(omnia_resp.get("original", 0)), "20"):
+                        omnia_nodes = omnia_resp.get("parsed", {}).get("nodes", [])
+                        for node in omnia_nodes:
+                            node_type = node.get("nodeType", "")
+                            if "evse" in node_type.lower():
+                                node_id = node.get("id")
+                                # Convert Omnia node format to product format
+                                evse_product = {
+                                    "id": node_id,
+                                    "type": "evse",
+                                    "state": {
+                                        "name": node.get("name", "EV Charger"),
+                                        "status": "ONLINE"
+                                    },
+                                    "props": node.get("features", {}),
+                                    "parent": node.get("homeId"),
+                                    "isGroup": False
+                                }
+                                tmpProducts[node_id] = evse_product
+                                self.data.products[node_id] = evse_product
+                                
+                                # Also create a virtual device entry for EVSE
+                                evse_device = {
+                                    "id": node_id,
+                                    "type": "evse",
+                                    "state": {
+                                        "name": node.get("name", "EV Charger")
+                                    },
+                                    "props": {
+                                        "online": True,
+                                        "presence": "PRESENT"
+                                    }
+                                }
+                                tmpDevices[node_id] = evse_device
+                                self.data.devices[node_id] = evse_device
+                except Exception as e:
+                    # Don't fail if Omnia API is unavailable
+                    self.logger.debug(f"Could not fetch Omnia nodes: {e}")
+            
             self.config.lastUpdate = datetime.now()
             get_nodes_successful = True
         except (OSError, RuntimeError, HiveApiError, ConnectionError, HTTPException):
@@ -537,6 +581,7 @@ class HiveSession:
         self.deviceList["binary_sensor"] = []
         self.deviceList["camera"] = []
         self.deviceList["climate"] = []
+        self.deviceList["evcharger"] = []
         self.deviceList["light"] = []
         self.deviceList["sensor"] = []
         self.deviceList["switch"] = []
@@ -561,7 +606,7 @@ class HiveSession:
                 a = self.data["actions"][action]  # noqa: F841
                 eval("self." + ACTIONS)
 
-        hive_type = HIVE_TYPES["Heating"] + HIVE_TYPES["Switch"] + HIVE_TYPES["Light"]
+        hive_type = HIVE_TYPES["Heating"] + HIVE_TYPES["Switch"] + HIVE_TYPES["Light"] + HIVE_TYPES["EVCharger"]
         for aProduct in self.data.products:
             p = self.data.products[aProduct]
             if "error" in p:

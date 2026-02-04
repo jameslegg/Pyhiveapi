@@ -12,6 +12,7 @@ from loguru import logger
 from .action import HiveAction
 from .alarm import Alarm
 from .camera import Camera
+from .evcharger import EVCharger
 from .heating import Climate
 from .hotwater import WaterHeater
 from .hub import HiveHub
@@ -19,6 +20,7 @@ from .light import Light
 from .plug import Switch
 from .sensor import Sensor
 from .session import HiveSession
+from .evcharger import EVCharger
 
 debug = []
 home = expanduser("~")
@@ -114,6 +116,7 @@ class Hive(HiveSession):
         self.action = HiveAction(self.session)
         self.alarm = Alarm(self.session)
         self.camera = Camera(self.session)
+        self.evcharger = EVCharger(self.session)
         self.heating = Climate(self.session)
         self.hotwater = WaterHeater(self.session)
         self.hub = HiveHub(self.session)
@@ -123,6 +126,11 @@ class Hive(HiveSession):
         self.logger = logger
         if debug:
             sys.settrace(trace_debug)
+
+    async def close(self):
+        """Close all resources and cleanup sessions."""
+        if hasattr(self, 'api') and hasattr(self.api, 'close'):
+            await self.api.close()
 
     def setDebugging(self, debugger: list):
         """Set function to debug.
