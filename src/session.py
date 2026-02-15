@@ -9,6 +9,7 @@ import os
 import time
 from datetime import datetime, timedelta
 
+from aiohttp import ClientError
 from aiohttp.web import HTTPException
 from apyhiveapi import API, Auth
 
@@ -67,6 +68,9 @@ class HiveSession:
         self.attr = HiveAttributes(self)
         self.log = Logger(self)
         self.updateLock = asyncio.Lock()
+        self._update_failures = 0
+        self._last_failed_update: datetime | None = None
+        self._update_cooldown = timedelta(seconds=30)
         self.tokens = Map(
             {
                 "tokenData": {},
@@ -335,16 +339,32 @@ class HiveSession:
         """
         updated = False
         ep = self.config.lastUpdate + self.config.scanInterval
-        if datetime.now() >= ep and not self.updateLock.locked():
+        if datetime.now() < ep:
+            return updated
+
+        if self.updateLock.locked():
+            return updated
+
+        if self._last_failed_update is not None and datetime.now() < (
+            self._last_failed_update + self._update_cooldown
+        ):
+            return updated
+
+        async with self.updateLock:
             try:
-                await self.updateLock.acquire()
-                await self.getDevices(device["hiveID"])
-                if len(self.deviceList["camera"]) > 0:
+                updated = await self.getDevices(device["hiveID"])
+                if updated and len(self.deviceList["camera"]) > 0:
                     for camera in self.data.camera:
                         await self.getCamera(self.devices[camera])
-                updated = True
-            finally:
-                self.updateLock.release()
+            except (ClientError, OSError, RuntimeError, HTTPException, HiveApiError):
+                updated = False
+
+        if updated:
+            self._update_failures = 0
+            self._last_failed_update = None
+        else:
+            self._update_failures += 1
+            self._last_failed_update = datetime.now()
 
         return updated
 
@@ -519,7 +539,15 @@ class HiveSession:
             
             self.config.lastUpdate = datetime.now()
             get_nodes_successful = True
-        except (OSError, RuntimeError, HiveApiError, ConnectionError, HTTPException):
+        except (
+            ClientError,
+            OSError,
+            RuntimeError,
+            HiveApiError,
+            ConnectionError,
+            HTTPException,
+            asyncio.TimeoutError,
+        ):
             get_nodes_successful = False
 
         return get_nodes_successful

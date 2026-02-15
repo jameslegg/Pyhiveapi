@@ -1,12 +1,13 @@
 """Hive API Module."""
 
 # pylint: skip-file
+import asyncio
 import json
 from typing import Optional
 
 import requests
 import urllib3
-from aiohttp import ClientResponse, ClientSession, web_exceptions
+from aiohttp import ClientError, ClientResponse, ClientSession, web_exceptions
 from pyquery import PyQuery
 
 from ..helper.const import HTTP_UNAUTHORIZED
@@ -82,12 +83,22 @@ class HiveApiAsync:
             else:
                 raise NoApiToken
 
-        async with self.websession.request(
-            method, url, headers=headers, data=data
-        ) as resp:
-            await resp.text()
-            if str(resp.status).startswith("20"):
-                return resp
+        try:
+            async with asyncio.timeout(self.timeout):
+                async with self.websession.request(
+                    method, url, headers=headers, data=data
+                ) as resp:
+                    await resp.text()
+                    if str(resp.status).startswith("20"):
+                        return resp
+        except (asyncio.TimeoutError, ClientError) as err:
+            if self.session is not None and hasattr(self.session, "logger"):
+                self.session.logger.debug(
+                    "Request to %s failed: %s",
+                    url,
+                    err,
+                )
+            raise HiveApiError from err
 
         if resp.status == HTTP_UNAUTHORIZED:
             self.session.logger.error(
@@ -180,13 +191,14 @@ class HiveApiAsync:
                 'x-alertme-client': 'Honeycomb React Native App',
                 'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
             }
-            
-            async with self.websession.request(
-                "get", url, headers=headers
-            ) as resp:
-                json_return.update({"original": resp.status})
-                json_return.update({"parsed": await resp.json(content_type=None)})
-        except (OSError, RuntimeError, ZeroDivisionError):
+
+            async with asyncio.timeout(self.timeout):
+                async with self.websession.request(
+                    "get", url, headers=headers
+                ) as resp:
+                    json_return.update({"original": resp.status})
+                    json_return.update({"parsed": await resp.json(content_type=None)})
+        except (asyncio.TimeoutError, ClientError, OSError, RuntimeError, ZeroDivisionError):
             await self.error()
 
         return json_return
@@ -405,13 +417,14 @@ class HiveApiAsync:
                 'x-alertme-client': 'Honeycomb React Native App',
                 'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
             }
-            
-            async with self.websession.request(
-                "get", url, headers=headers
-            ) as resp:
-                json_return.update({"original": resp.status})
-                json_return.update({"parsed": await resp.json(content_type=None)})
-        except (OSError, RuntimeError, ZeroDivisionError):
+
+            async with asyncio.timeout(self.timeout):
+                async with self.websession.request(
+                    "get", url, headers=headers
+                ) as resp:
+                    json_return.update({"original": resp.status})
+                    json_return.update({"parsed": await resp.json(content_type=None)})
+        except (asyncio.TimeoutError, ClientError, OSError, RuntimeError, ZeroDivisionError):
             await self.error()
 
         return json_return
@@ -455,12 +468,13 @@ class HiveApiAsync:
                 'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
             }
             
-            async with self.websession.request(
-                "put", url, headers=headers, data=jsc
-            ) as resp:
-                json_return["original"] = resp.status
-                json_return["parsed"] = await resp.json(content_type=None)
-        except (FileInUse, OSError, RuntimeError, ConnectionError) as e:
+            async with asyncio.timeout(self.timeout):
+                async with self.websession.request(
+                    "put", url, headers=headers, data=jsc
+                ) as resp:
+                    json_return["original"] = resp.status
+                    json_return["parsed"] = await resp.json(content_type=None)
+        except (FileInUse, asyncio.TimeoutError, ClientError, OSError, RuntimeError, ConnectionError) as e:
             if e.__class__.__name__ == "FileInUse":
                 return {"original": "file"}
             else:
@@ -506,12 +520,13 @@ class HiveApiAsync:
                 'Authorization': f'Bearer {self.session.tokens.tokenData["token"]}'
             }
             
-            async with self.websession.request(
-                "put", url, headers=headers, data=jsc
-            ) as resp:
-                json_return["original"] = resp.status
-                json_return["parsed"] = await resp.json(content_type=None)
-        except (FileInUse, OSError, RuntimeError, ConnectionError) as e:
+            async with asyncio.timeout(self.timeout):
+                async with self.websession.request(
+                    "put", url, headers=headers, data=jsc
+                ) as resp:
+                    json_return["original"] = resp.status
+                    json_return["parsed"] = await resp.json(content_type=None)
+        except (FileInUse, asyncio.TimeoutError, ClientError, OSError, RuntimeError, ConnectionError) as e:
             if e.__class__.__name__ == "FileInUse":
                 return {"original": "file"}
             else:
