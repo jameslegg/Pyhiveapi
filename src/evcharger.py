@@ -39,7 +39,7 @@ class HiveEVCharger:
         try:
             data = self.session.data.products[device["hiveID"]]
             features = data.get("props", {}).get("ev_supply_equipment_v1", {})
-            state = features.get("connectorStatus", {}).get("reportedValue")
+            state = features.get("status", {}).get("reportedValue")
         except (KeyError, AttributeError) as e:
             await self.session.log.error(e)
 
